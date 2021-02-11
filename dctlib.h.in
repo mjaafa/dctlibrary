@@ -1,0 +1,13 @@
+#ifndef DCTLIB_H
+#define DCTLIB_h
+
+#define DCTLIB_VERSION_MAJOR @DCTLIB_VERSION_MAJOR@
+#define DCTLIB_VERSION_MINOR @DCTLIB_VERSION_MINOR@
+
+#cmakedefine _USE_PGM
+#cmakedefine _USE_MATRIX_TOOLS
+#cmakedefine _USE_DCT
+#cmakedefine _USE_JOBS
+#cmakedefine BUILD_CUDA_DCT
+
+#endif
