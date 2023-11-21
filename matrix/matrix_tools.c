@@ -47,18 +47,16 @@
 /*                               FUNCTIONS                                    */
 /* =================================80======================================= */
 
-int** MTOOLS_matrixAllocInt_f(int nb_rows,int nb_cols)
+int** MTOOLS_matrixAllocInt_f(int nb_rows,int nb_cols, int *** matrix)
 {
    int row;
-   int** matrix;
    
-   matrix = (int**)malloc(sizeof(int *)*nb_rows);
+   *matrix = (int**)malloc(sizeof(int *)*nb_rows);
    for (row = 0; row < nb_rows; row++)
    {
-      matrix[row] = (int *)malloc(sizeof(int)*(nb_cols));
+      (*matrix)[row] = (int *)malloc(sizeof(int)*(nb_cols));
    }
      
-   return(matrix);
 }
 
 void MTOOLS_matrixFreeInt_f(int** matrix)
@@ -72,18 +70,16 @@ void MTOOLS_matrixFreeInt_f(int** matrix)
       return;
 }
 
-float** MTOOLS_matrixAllocFloat_f(int nb_rows,int nb_cols)
+float** MTOOLS_matrixAllocFloat_f(int nb_rows,int nb_cols, float ***matrix)
 {
    int row;
-   float** matrix;
    
-   matrix = (float**)malloc(sizeof(float *)*nb_rows);
+   *matrix = (float**)malloc(sizeof(float *)*nb_rows);
    for (row = 0; row < nb_rows; row++)
    {
-      matrix[row] = (float *)malloc(sizeof(float)*(nb_cols));
+      (*matrix)[row] = (float *)malloc(sizeof(float)*(nb_cols));
    }
      
-   return(matrix);
 }
 
 void MTOOLS_matrixFreeFloat_f(float** matrix)

@@ -68,35 +68,35 @@ void * DCT_forwardDct_f(void* params)
    
    /* prepare C matrix of the DCT */
    float** cMatrix  = NULL;
-   cMatrix = (float**) MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &cMatrix);
    DCT_transfomMatrixInit_f(cMatrix);
-   //MTOOLS_matrixShowFloat_f(cMatrix,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
    
    /* prepare Ctr matrix of the DCT */
    float** ctrMatrix  = NULL;
-   ctrMatrix = (float**) MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &ctrMatrix);
    MTOOLS_matrixTransposer((int**)cMatrix,(int**)ctrMatrix, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
  
    /* prepare quantum matrix */
    int** quantumMatrix  = NULL;
-   quantumMatrix = (int**) MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &quantumMatrix);
    DCT_quantumMatrixInit_f(quantumMatrix);
    
    int **block8X8 = NULL;
-   block8X8 = (int**) MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &block8X8);
    
    float **block8X8f = NULL;
-   block8X8f = (float**) MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &block8X8f);
    
    float **blockDct8X8Step1; // DCT
-   blockDct8X8Step1 = (float**) MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,&blockDct8X8Step1);
    
    float **blockDct8X8Step2; // DCT
-   blockDct8X8Step2 = (float**) MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,&blockDct8X8Step2);
    
    int** blockDct8X8  = NULL;
-   blockDct8X8 = (int**) MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,&blockDct8X8);
    
+   MTOOLS_matrixShowFloat_f(cMatrix,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
    while(1)
    {
       JTOOLS_msgQueueWait(&dctMsgQueue, &msg);
@@ -105,6 +105,8 @@ void * DCT_forwardDct_f(void* params)
       job         = msg.msgId;
       blockIndexI = (int)msg.data1;
       blockIndexJ = (int)msg.data2;
+     printf(" I = %d ; J = %d \n", blockIndexI, blockIndexJ); 
+	 printf("JOB = %d " , job);
             
       switch(job)
       {
@@ -112,8 +114,8 @@ void * DCT_forwardDct_f(void* params)
          {
 #ifdef _USE_MATRIX_TOOLS 
 
-            if(data->inputPictureMatrix == NULL)
-            return;
+            /*if(data->inputPictureMatrix == NULL)
+            return;*/
             MTOOLS_matrixCopyInt1(data->inputPictureMatrix, block8X8,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,
                                   blockIndexI*DCT_8_X_8_BLOCK, blockIndexJ*DCT_8_X_8_BLOCK);
                                    
@@ -127,7 +129,7 @@ void * DCT_forwardDct_f(void* params)
                        
             MTOOLS_matrixCopyInt2(blockDct8X8,data->outputPictureMatrix, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,
                                        (blockIndexI * DCT_8_X_8_BLOCK), (blockIndexJ * DCT_8_X_8_BLOCK));
-            //MTOOLS_matrixShowInt_f(blockDct8X8,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+     //       MTOOLS_matrixShowInt_f(blockDct8X8,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
             
 #endif /*_USE_MATRIX_TOOLS*/
          break;
@@ -135,14 +137,14 @@ void * DCT_forwardDct_f(void* params)
          
          case JOB_EXIT:
          {
-            MTOOLS_matrixFreeInt_f(quantumMatrix); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeInt_f(block8X8); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeFloat_f(block8X8f); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeFloat_f(cMatrix); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeFloat_f(ctrMatrix); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeFloat_f(blockDct8X8Step1); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeFloat_f(blockDct8X8Step2); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeInt_f(blockDct8X8); // TBC : FREE IS NOT TOO SECURED
+   //         MTOOLS_matrixFreeInt_f(quantumMatrix); // TBC : FREE IS NOT TOO SECURED
+     ///       MTOOLS_matrixFreeInt_f(block8X8); // TBC : FREE IS NOT TOO SECURED
+        //    MTOOLS_matrixFreeFloat_f(block8X8f); // TBC : FREE IS NOT TOO SECURED
+   //         MTOOLS_matrixFreeFloat_f(cMatrix); // TBC : FREE IS NOT TOO SECURED
+     //       MTOOLS_matrixFreeFloat_f(ctrMatrix); // TBC : FREE IS NOT TOO SECURED
+      //      MTOOLS_matrixFreeFloat_f(blockDct8X8Step1); // TBC : FREE IS NOT TOO SECURED
+      //      MTOOLS_matrixFreeFloat_f(blockDct8X8Step2); // TBC : FREE IS NOT TOO SECURED
+      //      MTOOLS_matrixFreeInt_f(blockDct8X8); // TBC : FREE IS NOT TOO SECURED
             break;
          }
          default:
@@ -165,37 +167,37 @@ void * DCT_iDct_f(void* params)
    
    /* prepare C matrix of the DCT */
    float** cMatrix  = NULL;
-   cMatrix = (float**) MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,&cMatrix);
    DCT_transfomMatrixInit_f(cMatrix);
-   //MTOOLS_matrixShowFloat_f(cMatrix,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixShowFloat_f(cMatrix,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
    
    /* prepare Ctr matrix of the DCT */
    float** ctrMatrix  = NULL;
-   ctrMatrix = (float**) MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &ctrMatrix);
    MTOOLS_matrixTransposer((int**)cMatrix,(int**)ctrMatrix, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
  
    /* prepare quantum matrix */
    int** quantumMatrix  = NULL;
-   quantumMatrix = (int**) MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,&quantumMatrix);
    DCT_quantumMatrixInit_f(quantumMatrix);
    
    int **block8X8 = NULL;
-   block8X8 = (int**) MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &block8X8);
    
    float **block8X8f = NULL;
-   block8X8f = (float**) MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &block8X8f);
    
    float **blockDct8X8f = NULL;
-   blockDct8X8f = (float**) MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,&blockDct8X8f);
    
    float **blockDct8X8Step1; // DCT
-   blockDct8X8Step1 = (float**) MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &blockDct8X8Step1);
    
    float **blockDct8X8Step2; // DCT
-   blockDct8X8Step2 = (float**) MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &blockDct8X8Step2);
    
    int** blockDct8X8  = NULL;
-   blockDct8X8 = (int**) MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &blockDct8X8);
    
    while(1)
    {
@@ -205,15 +207,16 @@ void * DCT_iDct_f(void* params)
       job         = msg.msgId;
       blockIndexI = (int)msg.data1;
       blockIndexJ = (int)msg.data2;
+     printf(" I = %d ; J = %d \n", blockIndexI, blockIndexJ); 
+	 printf("JOB = %d " , job);
             
       switch(job)
       {
          case DCT_JOB_COMPUTE :
          {
 #ifdef _USE_MATRIX_TOOLS 
-
-            if(data->inputPictureMatrix == NULL)
-            return;
+   /*         if(data->inputPictureMatrix == NULL)
+            return;*/
             MTOOLS_matrixCopyInt1(data->inputPictureMatrix, blockDct8X8,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,
                                   blockIndexI*DCT_8_X_8_BLOCK, blockIndexJ*DCT_8_X_8_BLOCK);
                                    
@@ -227,7 +230,7 @@ void * DCT_iDct_f(void* params)
             
             MTOOLS_matrixCopyInt2(block8X8,data->outputPictureMatrix, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,
                                        (blockIndexI * DCT_8_X_8_BLOCK), (blockIndexJ * DCT_8_X_8_BLOCK));
-            //MTOOLS_matrixShowInt_f(blockDct8X8,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+      //      MTOOLS_matrixShowInt_f(blockDct8X8,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
             
 #endif /*_USE_MATRIX_TOOLS*/
          break;
@@ -235,15 +238,15 @@ void * DCT_iDct_f(void* params)
          
          case JOB_EXIT:
          {
-            MTOOLS_matrixFreeInt_f(quantumMatrix); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeInt_f(block8X8); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeFloat_f(block8X8f); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeFloat_f(blockDct8X8f); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeFloat_f(cMatrix); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeFloat_f(ctrMatrix); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeFloat_f(blockDct8X8Step1); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeFloat_f(blockDct8X8Step2); // TBC : FREE IS NOT TOO SECURED
-            MTOOLS_matrixFreeInt_f(blockDct8X8); // TBC : FREE IS NOT TOO SECURED
+     //       MTOOLS_matrixFreeInt_f(quantumMatrix); // TBC : FREE IS NOT TOO SECURED
+       //     MTOOLS_matrixFreeInt_f(block8X8); // TBC : FREE IS NOT TOO SECURED
+         //   MTOOLS_matrixFreeFloat_f(block8X8f); // TBC : FREE IS NOT TOO SECURED
+ //           MTOOLS_matrixFreeFloat_f(blockDct8X8f); // TBC : FREE IS NOT TOO SECURED
+   //         MTOOLS_matrixFreeFloat_f(cMatrix); // TBC : FREE IS NOT TOO SECURED
+     //       MTOOLS_matrixFreeFloat_f(ctrMatrix); // TBC : FREE IS NOT TOO SECURED
+  //          MTOOLS_matrixFreeFloat_f(blockDct8X8Step1); // TBC : FREE IS NOT TOO SECURED
+    //        MTOOLS_matrixFreeFloat_f(blockDct8X8Step2); // TBC : FREE IS NOT TOO SECURED
+      //      MTOOLS_matrixFreeInt_f(blockDct8X8); // TBC : FREE IS NOT TOO SECURED
             break;
          }
          default:

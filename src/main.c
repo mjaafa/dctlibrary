@@ -76,8 +76,14 @@
 /*                               VARIABLES                                    */
 /* =================================80======================================= */
 #ifdef _USE_JOBS
-JOB_msgQueue_ts dctMsgQueue; 
-JOB_msgQueue_ts iDctMsgQueue;
+JOB_msgQueue_ts dctMsgQueue = { 
+	.trigger = PTHREAD_COND_INITIALIZER,
+       	.locker   = PTHREAD_MUTEX_INITIALIZER
+}; 
+JOB_msgQueue_ts iDctMsgQueue = {
+	.trigger = PTHREAD_COND_INITIALIZER,
+       	.locker   = PTHREAD_MUTEX_INITIALIZER
+}; 
 #endif /*_USE_JOBS*/
 /* =================================80======================================= */
 /*                               FUNCTIONS                                    */
@@ -113,7 +119,7 @@ int main(int argc, char** argv)
    /* DCT */
    
    int** ffDct = NULL;
-   ffDct = (int**) MTOOLS_matrixAllocInt_f(row, col);
+   MTOOLS_matrixAllocInt_f(row, col,&ffDct);
    
    pthread_t forwardDctTaskId;
    int taskPriority = DCT_FFDCT_PRIORITY;
@@ -141,17 +147,17 @@ int main(int argc, char** argv)
    for (blockIndexI = 0; blockIndexI<(row/DCT_8_X_8_BLOCK); blockIndexI++)
    for (blockIndexJ = 0; blockIndexJ<(col/DCT_8_X_8_BLOCK); blockIndexJ++) 
    {
-   usleep(10);
       JTOOLS_msgQueuePush(&dctMsgQueue, (long) DCT_JOB_COMPUTE, (long) blockIndexI, (long) blockIndexJ);
-           
+      //DCT_forwardDct_f(&forwardDctTaskData);
+   usleep(100);
    }
    
    JTOOLS_msgQueuePush(&dctMsgQueue, (long) JOB_EXIT, (long) blockIndexI, (long) blockIndexJ);
    JTOOLS_exitJob(&forwardDctTaskId);
    /* IDCT */
-#if 1
+#if 1 
    int** iDct = NULL;
-   iDct = (int**) MTOOLS_matrixAllocInt_f(row, col);
+   MTOOLS_matrixAllocInt_f(row, col, &iDct);
    
    pthread_t iDctTaskId;
    
@@ -172,8 +178,10 @@ int main(int argc, char** argv)
    for (blockIndexI = 0; blockIndexI<(row/DCT_8_X_8_BLOCK); blockIndexI++)
    for (blockIndexJ = 0; blockIndexJ<(col/DCT_8_X_8_BLOCK); blockIndexJ++) 
    {
-   usleep(10);
       JTOOLS_msgQueuePush(&iDctMsgQueue, (long) DCT_JOB_COMPUTE, (long) blockIndexI, (long) blockIndexJ);
+      //DCT_iDct_f(&forwardDctTaskData);
+	      
+   usleep(100);
    }
          
   
@@ -186,7 +194,7 @@ int main(int argc, char** argv)
 
 #ifdef _USE_MATRIX_TOOLS
    int **zigzag8X8 = NULL;
-   zigzag8X8 = (int**) MTOOLS_matrixAllocInt_f((DCT_8_X_8_BLOCK + DCT_8_X_8_BLOCK),(DCT_8_X_8_BLOCK + DCT_8_X_8_BLOCK));
+   MTOOLS_matrixAllocInt_f((DCT_8_X_8_BLOCK + DCT_8_X_8_BLOCK),(DCT_8_X_8_BLOCK + DCT_8_X_8_BLOCK), &zigzag8X8);
    
    MTOOLS_zigzagMatrixCollector(zigzag8X8, DCT_8_X_8_BLOCK, NULL);
    
@@ -203,7 +211,7 @@ int main(int argc, char** argv)
 #endif /* (defined _USE_DCT) && (defined _USE_MATRIX_TOOLS) */
 
 #ifdef _USE_MATRIX_TOOLS
-   MTOOLS_matrixFreeInt_f(pictureMatrix); // TBC : FREE IS NOT TOO SECURED
+//   MTOOLS_matrixFreeInt_f(pictureMatrix); // TBC : FREE IS NOT TOO SECURED
 #endif /*_USE_MATRIX_TOOLS*/
 
    return OK;

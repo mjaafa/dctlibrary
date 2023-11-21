@@ -68,7 +68,8 @@
 typedef struct JOB_msg
 {
    int        msgId;             /**< Message ID */
-
+   int*       data1;
+   int*       data2;
    // TODO : https://gist.github.com/vaclavbohac/914625
 }JOB_msg_ts;
 

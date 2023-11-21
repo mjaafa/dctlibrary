@@ -68,7 +68,7 @@
  * \date    
  */
  
-int** MTOOLS_matrixAllocInt_f(int nb_rows,int nb_cols);
+int** MTOOLS_matrixAllocInt_f(int nb_rows,int nb_cols, int *** matrix);
 
 /**
  *
@@ -93,7 +93,7 @@ void MTOOLS_matrixFreeInt_f(int** matrix);
  * \date    
  */
  
-float** MTOOLS_matrixAllocFloat_f(int nb_rows,int nb_cols);
+float** MTOOLS_matrixAllocFloat_f(int nb_rows,int nb_cols, float *** matrix);
 
 /**
  *

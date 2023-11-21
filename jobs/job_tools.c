@@ -40,6 +40,8 @@
 #include "job_tools.h"
 #include <stdio.h>
 #include <string.h>
+#include <sys/queue.h>
+
 /* =================================80======================================= */
 /*                               MACRO's                                      */
 /* =================================80======================================= */
@@ -52,6 +54,15 @@
 /*                               VARIABLES                                    */
 /* =================================80======================================= */
 
+TAILQ_HEAD(tailhead, JOB_frame_entry)	pool = TAILQ_HEAD_INITIALIZER(pool);
+
+struct tailhead             *headp;		 
+struct JOB_frame_entry {
+    TAILQ_ENTRY(JOB_frame_entry) entries;	     /*	List. */
+    int msgId;
+    int data1;
+    int data2;
+} *frameEntry;
 /* =================================80======================================= */
 /*                               FUNCTIONS                                    */
 /* =================================80======================================= */
@@ -104,10 +115,10 @@ int JTOOLS_createJob(pthread_t *threadId, int threadPriority, void *jobFunction,
    }
 
    /* Creation de la pthread */
-   z_ret = pthread_create((pthread_t *) threadId,
+   z_ret = (pthread_create((pthread_t *) threadId,
                           &attr,
                           (void*) jobFunction,
-                          (void*) threadData);
+                          (void*) threadData) < 0);
    if (z_ret != OK)
    {
        printf(" error = %d \n", z_ret);
@@ -131,6 +142,7 @@ int JTOOLS_exitJob(pthread_t *threadId)
       return ERROR_7;
    }
    int z_ret;
+   //z_ret = pthread_join(*threadId, NULL);
    z_ret = pthread_cancel(*threadId);
    
    return z_ret;
@@ -174,17 +186,23 @@ int JTOOLS_msgQueueInit(JOB_msgQueue_ts *msgQueue)
    msgQueue->read   = 0;
    msgQueue->write  = 0;
    
+   TAILQ_INIT(&pool);
    
    return OK;
 }
 
 int JTOOLS_msgQueuePush(JOB_msgQueue_ts *msgQueue, long msgId, long data1, long data2)
 {
-   
-    pthread_mutex_lock(&msgQueue->locker);
-    pthread_cond_signal(&msgQueue->trigger);
+  //printf("%s msgId = %d \n", __FUNCTION__, msgId);
+    	pthread_mutex_lock(&msgQueue->locker);
+        frameEntry	= malloc(sizeof(struct JOB_frame_entry));	     /*	Insert at the head. */
+        TAILQ_INSERT_TAIL(&pool, frameEntry, entries);
+        frameEntry->msgId = msgId;
+        frameEntry->data1 = data1;
+        frameEntry->data2 = data2;
 // TODO : implement 	msgqueue.
 
+    	pthread_cond_signal(&msgQueue->trigger);
        pthread_mutex_unlock(&msgQueue->locker);
    
    return OK;
@@ -194,8 +212,31 @@ int JTOOLS_msgQueuePush(JOB_msgQueue_ts *msgQueue, long msgId, long data1, long 
 int JTOOLS_msgQueueWait(JOB_msgQueue_ts *msgQueue, JOB_msg_ts *msg)
 {
     pthread_mutex_lock(&msgQueue->locker);
-    pthread_cond_wait(&(msgQueue->trigger), &(msgQueue->locker));
-   
+#if 0
+            if(!TAILQ_EMPTY(&pool)){
+             TAILQ_FOREACH_REVERSE(frameEntry, &pool, tailhead, entries) {
+                if (NULL != frameEntry)	
+                {
+			msg->data1 = frameEntry->data1;
+			msg->data2 = frameEntry->data2;
+			msg->msgId = frameEntry->msgId;
+  printf("%s msgId = %d [I=%d/J=%d]\n", __FUNCTION__, msg->msgId, msg->data1, msg->data2);
+	//		free(frameEntry);
+		}
+	     }
+	     }
+#endif
+	        while (!TAILQ_EMPTY(&pool)) {
+             frameEntry = TAILQ_FIRST(&pool);
+             TAILQ_REMOVE(&pool, frameEntry, entries);
+			msg->data1 = frameEntry->data1;
+			msg->data2 = frameEntry->data2;
+			msg->msgId = frameEntry->msgId;
+
+             free(frameEntry);
+	     break;
+     }
+
 // TODO : implmenent msgqueue.   
    
     pthread_cond_wait(&(msgQueue->trigger), &(msgQueue->locker));

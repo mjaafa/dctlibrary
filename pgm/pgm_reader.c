@@ -173,7 +173,7 @@ int lire_image_pgm( char *nom_brut,
    
    int **ima_original = NULL;
 #ifdef _USE_MATRIX_TOOLS
-   ima_original = (int**) MTOOLS_matrixAllocInt_f(*nb_lin,*nb_col);
+   MTOOLS_matrixAllocInt_f(*nb_lin,*nb_col, &ima_original);
 #endif /*_USE_MATRIX_TOOLS*/
    
    j=0;
