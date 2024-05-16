@@ -48,9 +48,30 @@
 #include <string.h>
 #include "dctlib.h"
 #include "error.h"
+#include <CL/cl.h>
 /* =================================80======================================= */
 /*                               DEFINES                                      */
 /* =================================80======================================= */
+#define MAX_KERNELS         24
+
+typedef enum MTOOLS_KERNEL_OPERATION_e{
+    MTOOLS_KERNEL_TRANSPOSE_MATRIX,
+    MTOOLS_KERNEL_MULTIPLY_MATRIX,
+    MTOOLS_KERNEL_MULTIPLY_MATRIX_ZEROS,
+    MTOOLS_KERNEL_MATRIX_CONV_INT2FLOAT,
+    MTOOLS_KERNEL_MATRIX_CONV_FLOAT2INT,
+
+}MTOOLS_KERNEL_OPERATION_t;
+
+typedef struct MTOOLS_OpenCL_context_s{
+       // Get platform and device information
+    cl_platform_id      platform_id;
+    cl_device_id        device_id;
+    cl_context          context;
+    cl_command_queue    queue;
+    cl_program          program;
+    cl_kernel           kernelOperations[MAX_KERNELS];
+}MTOOLS_OpenCL_context_t;
 
 
 /* =================================80======================================= */
@@ -68,7 +89,7 @@
  * \date    
  */
  
-int** MTOOLS_matrixAllocInt_f(int nb_rows,int nb_cols, int *** matrix);
+void MTOOLS_matrixAllocInt_f(int nb_rows,int nb_cols, int *** matrix);
 
 /**
  *
@@ -93,7 +114,7 @@ void MTOOLS_matrixFreeInt_f(int** matrix);
  * \date    
  */
  
-float** MTOOLS_matrixAllocFloat_f(int nb_rows,int nb_cols, float *** matrix);
+void MTOOLS_matrixAllocFloat_f(int nb_rows,int nb_cols, float *** matrix);
 
 /**
  *
@@ -266,6 +287,8 @@ void MTOOLS_matrixCopyInt2(int** inputMatrix,int** outputMatrix,int rows,int col
  
 void MTOOLS_zigzagMatrixCollector(int** inputMatrix, int matrixWidth, int* outputStream);
 
+
+void MTOOLS_initOpenCL(void);
 // JPEG_CODEC
 /** \} */
 // JPEG

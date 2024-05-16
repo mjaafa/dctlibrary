@@ -4,5 +4,7 @@ find_package(PkgConfig)
 if (_USE_JOBS)
 	include_directories(${PROJECT_SOURCE_DIR}/jobs)
 endif (_USE_JOBS)
+include_directories(${OpenCL_INCLUDE_DIRS})
+
 add_library(c_dct_api STATIC dct_tools.c)
-target_link_libraries(c_dct_api)
+target_link_libraries(c_dct_api ${OpenCL_LIBRARIES})

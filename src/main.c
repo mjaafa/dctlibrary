@@ -50,7 +50,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "dctlib.h"
+#include <dctlib.h>
 #include "error.h"
 #ifdef _USE_PGM
 #include "pgm_reader.h"

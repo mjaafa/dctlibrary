@@ -40,6 +40,8 @@
 #ifdef _USE_JOBS
 #include "job_tools.h"
 #endif /*_USE_JOBS*/
+#include <CL/cl.h>
+#include "matrix_tools.h"
 /* =================================80======================================= */
 /*                               MACRO's                                      */
 /* =================================80======================================= */
@@ -47,7 +49,7 @@
 /* =================================80======================================= */
 /*                               TYPEDEF & STRUCTURES & ENUMS                 */
 /* =================================80======================================= */
-
+extern MTOOLS_OpenCL_context_t openCLConext;
 /* =================================80======================================= */
 /*                               VARIABLES                                    */
 /* =================================80======================================= */
@@ -65,6 +67,10 @@ void * DCT_forwardDct_f(void* params)
    int blockIndexI;
    int blockIndexJ;
    int job;
+
+   cl_mem inputMatrixBuffer_1;
+   cl_mem inputMatrixBuffer_2;
+   cl_mem outputMatrixBuffer;
    
    /* prepare C matrix of the DCT */
    float** cMatrix  = NULL;
@@ -81,10 +87,10 @@ void * DCT_forwardDct_f(void* params)
    MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &quantumMatrix);
    DCT_quantumMatrixInit_f(quantumMatrix);
    
-   int **block8X8 = NULL;
+   int **block8X8;// = NULL;
    MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &block8X8);
    
-   float **block8X8f = NULL;
+   float **block8X8f;// = NULL;
    MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &block8X8f);
    
    float **blockDct8X8Step1; // DCT
@@ -93,10 +99,14 @@ void * DCT_forwardDct_f(void* params)
    float **blockDct8X8Step2; // DCT
    MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,&blockDct8X8Step2);
    
-   int** blockDct8X8  = NULL;
+   int** blockDct8X8;// = NULL;
    MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,&blockDct8X8);
    
    MTOOLS_matrixShowFloat_f(cMatrix,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   //OpenCL
+  // MTOOLS_initOpenCL();
+  
+
    while(1)
    {
       JTOOLS_msgQueueWait(&dctMsgQueue, &msg);
@@ -105,8 +115,8 @@ void * DCT_forwardDct_f(void* params)
       job         = msg.msgId;
       blockIndexI = (int)msg.data1;
       blockIndexJ = (int)msg.data2;
-     printf(" I = %d ; J = %d \n", blockIndexI, blockIndexJ); 
-	 printf("JOB = %d " , job);
+     //printf(" I = %d ; J = %d \n", blockIndexI, blockIndexJ); 
+	 //printf("JOB = %d " , job);
             
       switch(job)
       {
@@ -117,12 +127,56 @@ void * DCT_forwardDct_f(void* params)
             /*if(data->inputPictureMatrix == NULL)
             return;*/
             MTOOLS_matrixCopyInt1(data->inputPictureMatrix, block8X8,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,
-                                  blockIndexI*DCT_8_X_8_BLOCK, blockIndexJ*DCT_8_X_8_BLOCK);
+                                  (blockIndexI*DCT_8_X_8_BLOCK), (blockIndexJ*DCT_8_X_8_BLOCK));
                                    
             MTOOLS_matrixConvInt2Float(block8X8, block8X8f, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
-            
-            MTOOLS_multiplyMatrix((float**)block8X8f, cMatrix, blockDct8X8Step1, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
-                       
+#if 1            
+cl_int clError;
+inputMatrixBuffer_1 = clCreateBuffer(openCLConext.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float) * DCT_8_X_8_BLOCK * DCT_8_X_8_BLOCK, data->inputPictureMatrix, &clError);
+inputMatrixBuffer_2 = clCreateBuffer(openCLConext.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float) * DCT_8_X_8_BLOCK * DCT_8_X_8_BLOCK, cMatrix, &clError);
+outputMatrixBuffer = clCreateBuffer(openCLConext.context, CL_MEM_WRITE_ONLY, sizeof(float) * DCT_8_X_8_BLOCK * DCT_8_X_8_BLOCK, NULL, &clError);
+
+// Check for buffer creation errors
+if (!inputMatrixBuffer_1 || !inputMatrixBuffer_2 || !outputMatrixBuffer || clError != CL_SUCCESS) {
+    printf("Error: Failed to create OpenCL buffers. Error code: %d\n", clError);
+    // Handle error (e.g., return from function or exit program)
+}
+
+// Set kernel arguments
+clSetKernelArg(openCLConext.kernelOperations[MTOOLS_KERNEL_MULTIPLY_MATRIX], 0, sizeof(cl_mem), (void*)&inputMatrixBuffer_1);
+clSetKernelArg(openCLConext.kernelOperations[MTOOLS_KERNEL_MULTIPLY_MATRIX], 1, sizeof(cl_mem), (void*)&inputMatrixBuffer_2);
+clSetKernelArg(openCLConext.kernelOperations[MTOOLS_KERNEL_MULTIPLY_MATRIX], 2, sizeof(cl_mem), (void*)&outputMatrixBuffer);
+clSetKernelArg(openCLConext.kernelOperations[MTOOLS_KERNEL_MULTIPLY_MATRIX], 3, sizeof(int), (void*)DCT_8_X_8_BLOCK);
+clSetKernelArg(openCLConext.kernelOperations[MTOOLS_KERNEL_MULTIPLY_MATRIX], 4, sizeof(int), (void*)DCT_8_X_8_BLOCK);
+
+// Execute the kernel
+size_t globalItemSize = DCT_8_X_8_BLOCK;
+cl_int kernelError = clEnqueueNDRangeKernel(openCLConext.queue, openCLConext.kernelOperations[MTOOLS_KERNEL_MULTIPLY_MATRIX], 2, NULL, &globalItemSize, NULL, 0, NULL, NULL);
+
+// Check for kernel execution errors
+if (kernelError != CL_SUCCESS) {
+    printf("Error: Failed to execute OpenCL kernel. Error code: %d\n", kernelError);
+    // Handle error (e.g., return from function or exit program)
+}
+
+// Read the result from the device
+cl_int readBufferError = clEnqueueReadBuffer(openCLConext.queue, outputMatrixBuffer, CL_TRUE, 0, sizeof(float) * DCT_8_X_8_BLOCK * DCT_8_X_8_BLOCK, blockDct8X8Step1, 0, NULL, NULL);
+
+// Check for buffer read errors
+if (readBufferError != CL_SUCCESS) {
+    printf("Error: Failed to read buffer from device. Error code: %d\n", readBufferError);
+    // Handle error (e.g., return from function or exit program)
+}
+
+// Cleanup OpenCL buffers
+clReleaseMemObject(inputMatrixBuffer_1);
+clReleaseMemObject(inputMatrixBuffer_2);
+clReleaseMemObject(outputMatrixBuffer);
+#endif
+
+            //MTOOLS_multiplyMatrix((float**)block8X8f, cMatrix, blockDct8X8Step1, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+            //MTOOLS_matrixShowFloat_f(blockDct8X8Step1,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+           
             MTOOLS_multiplyMatrix(ctrMatrix, blockDct8X8Step1, blockDct8X8Step2, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
       
             DCT_quantifyMatrix_f(blockDct8X8, blockDct8X8Step2, quantumMatrix);
@@ -166,7 +220,7 @@ void * DCT_iDct_f(void* params)
    int job;
    
    /* prepare C matrix of the DCT */
-   float** cMatrix  = NULL;
+   float** cMatrix;
    MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,&cMatrix);
    DCT_transfomMatrixInit_f(cMatrix);
    MTOOLS_matrixShowFloat_f(cMatrix,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
@@ -207,8 +261,8 @@ void * DCT_iDct_f(void* params)
       job         = msg.msgId;
       blockIndexI = (int)msg.data1;
       blockIndexJ = (int)msg.data2;
-     printf(" I = %d ; J = %d \n", blockIndexI, blockIndexJ); 
-	 printf("JOB = %d " , job);
+    // printf(" I = %d ; J = %d \n", blockIndexI, blockIndexJ); 
+	 //printf("JOB = %d " , job);
             
       switch(job)
       {

@@ -42,12 +42,16 @@
 /* =================================80======================================= */
 /*                               VARIABLES                                    */
 /* =================================80======================================= */
-
+// GLOBAL CONTEXT 
+MTOOLS_OpenCL_context_t openCLConext = {
+    .platform_id = NULL,
+    .device_id   = NULL
+};
 /* =================================80======================================= */
 /*                               FUNCTIONS                                    */
 /* =================================80======================================= */
 
-int** MTOOLS_matrixAllocInt_f(int nb_rows,int nb_cols, int *** matrix)
+void MTOOLS_matrixAllocInt_f(int nb_rows,int nb_cols, int *** matrix)
 {
    int row;
    
@@ -70,11 +74,11 @@ void MTOOLS_matrixFreeInt_f(int** matrix)
       return;
 }
 
-float** MTOOLS_matrixAllocFloat_f(int nb_rows,int nb_cols, float ***matrix)
+void  MTOOLS_matrixAllocFloat_f(int nb_rows,int nb_cols, float ***matrix)
 {
    int row;
    
-   *matrix = (float**)malloc(sizeof(float *)*nb_rows);
+   *matrix = (float**)malloc(sizeof(float*)*nb_rows);
    for (row = 0; row < nb_rows; row++)
    {
       (*matrix)[row] = (float *)malloc(sizeof(float)*(nb_cols));
@@ -243,6 +247,32 @@ void MTOOLS_matrixCopyInt2(int** inputMatrix,int** outputMatrix,int rows,int col
   
   
 }
+const char* readFile(const char* fileName) {
+    FILE* file = fopen(fileName, "r");
+    if (!file) {
+        fprintf(stderr, "Failed to open file: %s\n", fileName);
+        exit(1);
+    }
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    rewind(file);
+    char* buffer = (char*)malloc(fileSize + 1);
+    if (!buffer) {
+        fclose(file);
+        fprintf(stderr, "Failed to allocate memory for file: %s\n", fileName);
+        exit(1);
+    }
+    size_t bytesRead = fread(buffer, 1, fileSize, file);
+    if (bytesRead != fileSize) {
+        fclose(file);
+        free(buffer);
+        fprintf(stderr, "Failed to read file: %s\n", fileName);
+        exit(1);
+    }
+    buffer[bytesRead] = '\0';
+    fclose(file);
+    return buffer;
+}
 
 void MTOOLS_zigzagMatrixCollector(int** inputMatrix, int matrixWidth,int* outputStream)
 {
@@ -322,4 +352,86 @@ void MTOOLS_zigzagMatrixCollector(int** inputMatrix, int matrixWidth,int* output
       
       stop = stop-1; 
    }while(stop>-1);
+}
+
+void MTOOLS_initOpenCL(void) {
+    // Load the kernel source code from file
+    printf(" OPENCL init \n");
+    const char* matrixOpSource = readFile("matrix_tools.cl");
+    if (!matrixOpSource) {
+        printf("Error: Failed to load OpenCL source code from file.\n");
+        return;
+    }
+
+    printf("Loaded OpenCL source code.\n");
+
+    cl_int ret;
+    cl_uint ret_num_devices;
+    cl_uint ret_num_platforms;
+
+    // Get platforms
+    ret = clGetPlatformIDs(1, &openCLConext.platform_id, &ret_num_platforms);
+    if (ret != CL_SUCCESS) {
+        printf("Error: Failed to get platform IDs!\n");
+        return;
+    }
+
+    // Get devices
+    ret = clGetDeviceIDs(openCLConext.platform_id, CL_DEVICE_TYPE_GPU, 1, &openCLConext.device_id, &ret_num_devices);
+    if (ret != CL_SUCCESS) {
+        printf("Error: Failed to get device IDs!\n");
+        return;
+    }
+
+    // Create an OpenCL context
+    openCLConext.context = clCreateContext(NULL, 1, &openCLConext.device_id, NULL, NULL, &ret);
+    if (!openCLConext.context) {
+        printf("Error: Failed to create OpenCL context. Error code: %d\n", ret);
+        return;
+    }
+
+    // Create a command queue
+    openCLConext.queue = clCreateCommandQueue(openCLConext.context, openCLConext.device_id, CL_QUEUE_PROFILING_ENABLE, &ret);
+    if (!openCLConext.queue) {
+        printf("Error: Failed to create command queue. Error code: %d\n", ret);
+        return;
+    }
+
+    // Create a program from the kernel sources
+    const char* sources[] = { matrixOpSource };
+    openCLConext.program = clCreateProgramWithSource(openCLConext.context, 1, sources, NULL, &ret);
+    if (!openCLConext.program || ret != CL_SUCCESS) {
+        printf("Error: Failed to create OpenCL program. Error code: %d\n", ret);
+        return;
+    }
+
+    // Build the program
+    ret = clBuildProgram(openCLConext.program, 1, &openCLConext.device_id, NULL, NULL, NULL);
+    if (ret != CL_SUCCESS) {
+        printf("Error: Failed to build OpenCL program. Error code: %d\n", ret);
+        // Print the build log
+        char build_log[0x1000000];
+        clGetProgramBuildInfo(openCLConext.program, openCLConext.device_id, CL_PROGRAM_BUILD_LOG, sizeof(build_log), build_log, NULL);
+        printf("Build log: %s\n", build_log);
+        return;
+    }
+
+    // Create the OpenCL kernels
+    openCLConext.kernelOperations[MTOOLS_KERNEL_TRANSPOSE_MATRIX] = clCreateKernel(openCLConext.program, "MTOOLS_matrixTransposer", &ret);
+    if (!openCLConext.kernelOperations[MTOOLS_KERNEL_TRANSPOSE_MATRIX] || ret != CL_SUCCESS) {
+        printf("Error: Failed to create transpose kernel. Error code: %d\n", ret);
+        return;
+    }
+
+    openCLConext.kernelOperations[MTOOLS_KERNEL_MULTIPLY_MATRIX] = clCreateKernel(openCLConext.program, "MTOOLS_multiplyMatrix", &ret);
+    if (!openCLConext.kernelOperations[MTOOLS_KERNEL_MULTIPLY_MATRIX] || ret != CL_SUCCESS) {
+        printf("Error: Failed to create multiply kernel. Error code: %d\n", ret);
+        return;
+    }
+
+    openCLConext.kernelOperations[MTOOLS_KERNEL_MULTIPLY_MATRIX_ZEROS] = clCreateKernel(openCLConext.program, "MTOOLS_multiplyMatrixZeros", &ret);
+    if (!openCLConext.kernelOperations[MTOOLS_KERNEL_MULTIPLY_MATRIX_ZEROS] || ret != CL_SUCCESS) {
+        printf("Error: Failed to create multiply zeros kernel. Error code: %d\n", ret);
+        return;
+    }
 }
