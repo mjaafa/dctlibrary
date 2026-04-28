@@ -169,6 +169,10 @@ void MTOOLS_matrixTransposer(float **inputMatrix,float **outputMatrix,int rows,i
 
 void MTOOLS_multiplyMatrix(float **inputMatrix_1,float **inputMatrix_2,float **outputMatrix,int rows,int cols);
 
+#ifdef USE_CUDA_MATRIX_TOOLS
+int MTOOLS_multiplyMatrixCuda(float **inputMatrix_1,float **inputMatrix_2,float **outputMatrix,int rows,int cols);
+#endif
+
 
 /**
  *

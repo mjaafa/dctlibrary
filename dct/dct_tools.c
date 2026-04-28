@@ -37,6 +37,9 @@
 /*                               INCLUDES                                     */
 /* =================================80======================================= */
 #include "dct_tools.h"
+#ifdef USE_CUDA_DCT
+#include "cuda_dct.h"
+#endif
 #ifdef _USE_JOBS
 #include "job_tools.h"
 #endif /*_USE_JOBS*/
@@ -59,13 +62,124 @@ extern JOB_msgQueue_ts iDctMsgQueue;
 /*                               FUNCTIONS                                    */
 /* =================================80======================================= */
 
+#ifdef USE_CUDA_DCT
+static int DCT_copyPictureToLinear(const int * const *matrix, int *buffer, int rows, int cols)
+{
+   int rowIndex;
+   int colIndex;
+   if ((matrix == NULL) || (buffer == NULL))
+   {
+      return -1;
+   }
+   for (rowIndex = 0; rowIndex < rows; ++rowIndex)
+   for (colIndex = 0; colIndex < cols; ++colIndex)
+   {
+      buffer[rowIndex * cols + colIndex] = matrix[rowIndex][colIndex];
+   }
+   return 0;
+}
+
+static int DCT_copyLinearToPicture(const int *buffer, int **matrix, int rows, int cols)
+{
+   int rowIndex;
+   int colIndex;
+   if ((matrix == NULL) || (buffer == NULL))
+   {
+      return -1;
+   }
+   for (rowIndex = 0; rowIndex < rows; ++rowIndex)
+   for (colIndex = 0; colIndex < cols; ++colIndex)
+   {
+      matrix[rowIndex][colIndex] = buffer[rowIndex * cols + colIndex];
+   }
+   return 0;
+}
+
+static int DCT_forwardDctCuda_f(DCT_data_ts* data)
+{
+   int *inputLinear = NULL;
+   int *outputLinear = NULL;
+   int ret = -1;
+   size_t totalCount;
+
+   if ((data == NULL) || (data->inputPictureMatrix == NULL) || (data->outputPictureMatrix == NULL))
+   {
+      return -1;
+   }
+
+   totalCount = (size_t)data->row * (size_t)data->col;
+   inputLinear = (int*)malloc(totalCount * sizeof(int));
+   outputLinear = (int*)malloc(totalCount * sizeof(int));
+   if ((inputLinear == NULL) || (outputLinear == NULL))
+   {
+      free(inputLinear);
+      free(outputLinear);
+      return -1;
+   }
+
+   DCT_copyPictureToLinear((const int * const *)data->inputPictureMatrix, inputLinear, data->row, data->col);
+   ret = CUDA_forwardDctPicture(inputLinear, outputLinear, data->row, data->col);
+   if (ret == 0)
+   {
+      DCT_copyLinearToPicture(outputLinear, data->outputPictureMatrix, data->row, data->col);
+   }
+
+   free(inputLinear);
+   free(outputLinear);
+   return ret;
+}
+
+static int DCT_iDctCuda_f(DCT_data_ts* data)
+{
+   int *inputLinear = NULL;
+   int *outputLinear = NULL;
+   int ret = -1;
+   size_t totalCount;
+
+   if ((data == NULL) || (data->inputPictureMatrix == NULL) || (data->outputPictureMatrix == NULL))
+   {
+      return -1;
+   }
+
+   totalCount = (size_t)data->row * (size_t)data->col;
+   inputLinear = (int*)malloc(totalCount * sizeof(int));
+   outputLinear = (int*)malloc(totalCount * sizeof(int));
+   if ((inputLinear == NULL) || (outputLinear == NULL))
+   {
+      free(inputLinear);
+      free(outputLinear);
+      return -1;
+   }
+
+   DCT_copyPictureToLinear((const int * const *)data->inputPictureMatrix, inputLinear, data->row, data->col);
+   ret = CUDA_inverseDctPicture(inputLinear, outputLinear, data->row, data->col);
+   if (ret == 0)
+   {
+      DCT_copyLinearToPicture(outputLinear, data->outputPictureMatrix, data->row, data->col);
+   }
+
+   free(inputLinear);
+   free(outputLinear);
+   return ret;
+}
+#endif
+
 void * DCT_forwardDct_f(void* params)
 {
+#ifdef _USE_JOBS
    JOB_msg_ts msg;
+   int job;
+#endif
    int blockIndexI;
    int blockIndexJ;
-   int job;
-   
+   DCT_data_ts* data = (DCT_data_ts*)params;
+#ifdef USE_CUDA_DCT
+   if (DCT_forwardDctCuda_f(data) == 0)
+   {
+      return NULL;
+   }
+#endif
+
    /* prepare C matrix of the DCT */
    float** cMatrix  = NULL;
    MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &cMatrix);
@@ -74,7 +188,7 @@ void * DCT_forwardDct_f(void* params)
    /* prepare Ctr matrix of the DCT */
    float** ctrMatrix  = NULL;
    MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &ctrMatrix);
-   MTOOLS_matrixTransposer((int**)cMatrix,(int**)ctrMatrix, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixTransposer(cMatrix, ctrMatrix, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
  
    /* prepare quantum matrix */
    int** quantumMatrix  = NULL;
@@ -97,17 +211,15 @@ void * DCT_forwardDct_f(void* params)
    MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,&blockDct8X8);
    
    MTOOLS_matrixShowFloat_f(cMatrix,DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+#ifdef _USE_JOBS
    while(1)
    {
       JTOOLS_msgQueueWait(&dctMsgQueue, &msg);
-      DCT_data_ts* data = (DCT_data_ts*)params;
-      
       job         = msg.msgId;
       blockIndexI = (int)msg.data1;
       blockIndexJ = (int)msg.data2;
-     printf(" I = %d ; J = %d \n", blockIndexI, blockIndexJ); 
-	 printf("JOB = %d " , job);
-            
+      printf(" I = %d ; J = %d \n", blockIndexI, blockIndexJ);
+      printf("JOB = %d ", job);
       switch(job)
       {
          case DCT_JOB_COMPUTE :
@@ -153,18 +265,41 @@ void * DCT_forwardDct_f(void* params)
          }
       }
    }
-#ifdef _USE_JOB
-   return (DCT_JOB_ID);
-#endif /* _USE_JOB */
+#else
+   for (blockIndexI = 0; blockIndexI < (data->row / DCT_8_X_8_BLOCK); ++blockIndexI)
+   for (blockIndexJ = 0; blockIndexJ < (data->col / DCT_8_X_8_BLOCK); ++blockIndexJ)
+   {
+#ifdef _USE_MATRIX_TOOLS
+      MTOOLS_matrixCopyInt1(data->inputPictureMatrix, block8X8, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,
+                            blockIndexI * DCT_8_X_8_BLOCK, blockIndexJ * DCT_8_X_8_BLOCK);
+      MTOOLS_matrixConvInt2Float(block8X8, block8X8f, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+      MTOOLS_multiplyMatrix((float**)block8X8f, cMatrix, blockDct8X8Step1, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+      MTOOLS_multiplyMatrix(ctrMatrix, blockDct8X8Step1, blockDct8X8Step2, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+      DCT_quantifyMatrix_f(blockDct8X8, blockDct8X8Step2, quantumMatrix);
+      MTOOLS_matrixCopyInt2(blockDct8X8, data->outputPictureMatrix, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,
+                            blockIndexI * DCT_8_X_8_BLOCK, blockIndexJ * DCT_8_X_8_BLOCK);
+#endif
+   }
+#endif
+   return NULL;
 }
 
 void * DCT_iDct_f(void* params)
 {
+#ifdef _USE_JOBS
    JOB_msg_ts msg;
+   int job;
+#endif
    int blockIndexI;
    int blockIndexJ;
-   int job;
-   
+   DCT_data_ts* data = (DCT_data_ts*)params;
+#ifdef USE_CUDA_DCT
+   if (DCT_iDctCuda_f(data) == 0)
+   {
+      return NULL;
+   }
+#endif
+
    /* prepare C matrix of the DCT */
    float** cMatrix  = NULL;
    MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,&cMatrix);
@@ -174,7 +309,7 @@ void * DCT_iDct_f(void* params)
    /* prepare Ctr matrix of the DCT */
    float** ctrMatrix  = NULL;
    MTOOLS_matrixAllocFloat_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &ctrMatrix);
-   MTOOLS_matrixTransposer((int**)cMatrix,(int**)ctrMatrix, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+   MTOOLS_matrixTransposer(cMatrix, ctrMatrix, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
  
    /* prepare quantum matrix */
    int** quantumMatrix  = NULL;
@@ -199,17 +334,15 @@ void * DCT_iDct_f(void* params)
    int** blockDct8X8  = NULL;
    MTOOLS_matrixAllocInt_f(DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK, &blockDct8X8);
    
+#ifdef _USE_JOBS
    while(1)
    {
       JTOOLS_msgQueueWait(&iDctMsgQueue, &msg);
-      DCT_data_ts* data = (DCT_data_ts*)params;
-      
       job         = msg.msgId;
       blockIndexI = (int)msg.data1;
       blockIndexJ = (int)msg.data2;
-     printf(" I = %d ; J = %d \n", blockIndexI, blockIndexJ); 
-	 printf("JOB = %d " , job);
-            
+      printf(" I = %d ; J = %d \n", blockIndexI, blockIndexJ);
+      printf("JOB = %d ", job);
       switch(job)
       {
          case DCT_JOB_COMPUTE :
@@ -255,9 +388,23 @@ void * DCT_iDct_f(void* params)
          }
       }
    }
-#ifdef _USE_JOB
-   return (DCT_JOB_ID);
-#endif /* _USE_JOB */
+#else
+   for (blockIndexI = 0; blockIndexI < (data->row / DCT_8_X_8_BLOCK); ++blockIndexI)
+   for (blockIndexJ = 0; blockIndexJ < (data->col / DCT_8_X_8_BLOCK); ++blockIndexJ)
+   {
+#ifdef _USE_MATRIX_TOOLS
+      MTOOLS_matrixCopyInt1(data->inputPictureMatrix, blockDct8X8, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,
+                            blockIndexI * DCT_8_X_8_BLOCK, blockIndexJ * DCT_8_X_8_BLOCK);
+      DCT_dequantifyMatrix_f(block8X8f, blockDct8X8, quantumMatrix);
+      MTOOLS_multiplyMatrix(block8X8f, ctrMatrix, blockDct8X8Step2, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+      MTOOLS_multiplyMatrix(cMatrix, blockDct8X8Step2, blockDct8X8Step1, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+      MTOOLS_matrixConvFloat2Int(blockDct8X8Step1, block8X8, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK);
+      MTOOLS_matrixCopyInt2(block8X8, data->outputPictureMatrix, DCT_8_X_8_BLOCK, DCT_8_X_8_BLOCK,
+                            blockIndexI * DCT_8_X_8_BLOCK, blockIndexJ * DCT_8_X_8_BLOCK);
+#endif
+   }
+#endif
+   return NULL;
 }
 
 void DCT_transfomMatrixInit_f(float **dctMatrix)

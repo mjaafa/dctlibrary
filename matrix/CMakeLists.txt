@@ -1,5 +1,7 @@
-cmake_minimum_required (VERSION 2.6)
-
-find_package(PkgConfig)
+cmake_minimum_required(VERSION 3.16)
 add_library(c_matrix_api STATIC matrix_tools.c)
-target_link_libraries(c_matrix_api)
+target_compile_definitions(c_matrix_api PRIVATE $<$<BOOL:${BUILD_CUDA_MATRIX_TOOLS}>:USE_CUDA_MATRIX_TOOLS>)
+if (BUILD_CUDA_MATRIX_TOOLS)
+    target_include_directories(c_matrix_api PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../cuda ${PROJECT_BINARY_DIR})
+    target_link_libraries(c_matrix_api PUBLIC c_cuda_matrix_tools)
+endif()

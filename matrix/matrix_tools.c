@@ -31,6 +31,12 @@
 /* =================================80======================================= */
 
 #include "matrix_tools.h"
+#ifdef USE_CUDA_MATRIX_TOOLS
+#include "cuda_matrix_tools.h"
+#endif
+#ifdef USE_CUDA_MATRIX_TOOLS
+static int MTOOLS_matrixTransposerCuda(float **inputMatrix,float **outputMatrix,int rows,int cols);
+#endif
 /* =================================80======================================= */
 /*                               MACRO's                                      */
 /* =================================80======================================= */
@@ -128,7 +134,13 @@ void MTOOLS_matrixShowFloat_f(float **matrix,int rows,int cols, unsigned int lin
 void MTOOLS_matrixTransposer(float **inputMatrix,float **outputMatrix,int rows,int cols)
 {
    int i,j;
-   float m;
+
+#ifdef USE_CUDA_MATRIX_TOOLS
+   if (MTOOLS_matrixTransposerCuda(inputMatrix, outputMatrix, rows, cols) == OK)
+   {
+      return;
+   }
+#endif
 
    for(i=0; i<rows; i++) 
    for(j=0; j<cols; j++) 
@@ -137,31 +149,363 @@ void MTOOLS_matrixTransposer(float **inputMatrix,float **outputMatrix,int rows,i
    }
 }   
 
+#ifdef USE_CUDA_MATRIX_TOOLS
+static int MTOOLS_countElements(int rows, int cols, size_t *count)
+{
+   if ((rows <= 0) || (cols <= 0) || (count == NULL))
+   {
+      return ERROR_1;
+   }
+
+   *count = (size_t)rows * (size_t)cols;
+   return OK;
+}
+
+static void MTOOLS_flattenFloatMatrix(float **matrix, float *buffer, int rows, int cols)
+{
+   int rowIndex;
+   int colIndex;
+   for (rowIndex = 0; rowIndex < rows; ++rowIndex)
+   for (colIndex = 0; colIndex < cols; ++colIndex)
+   {
+      buffer[rowIndex * cols + colIndex] = matrix[rowIndex][colIndex];
+   }
+}
+
+static void MTOOLS_unflattenFloatMatrix(const float *buffer, float **matrix, int rows, int cols)
+{
+   int rowIndex;
+   int colIndex;
+   for (rowIndex = 0; rowIndex < rows; ++rowIndex)
+   for (colIndex = 0; colIndex < cols; ++colIndex)
+   {
+      matrix[rowIndex][colIndex] = buffer[rowIndex * cols + colIndex];
+   }
+}
+
+static void MTOOLS_flattenIntMatrix(int **matrix, int *buffer, int rows, int cols)
+{
+   int rowIndex;
+   int colIndex;
+   for (rowIndex = 0; rowIndex < rows; ++rowIndex)
+   for (colIndex = 0; colIndex < cols; ++colIndex)
+   {
+      buffer[rowIndex * cols + colIndex] = matrix[rowIndex][colIndex];
+   }
+}
+
+static void MTOOLS_unflattenIntMatrix(const int *buffer, int **matrix, int rows, int cols)
+{
+   int rowIndex;
+   int colIndex;
+   for (rowIndex = 0; rowIndex < rows; ++rowIndex)
+   for (colIndex = 0; colIndex < cols; ++colIndex)
+   {
+      matrix[rowIndex][colIndex] = buffer[rowIndex * cols + colIndex];
+   }
+}
+
+static int MTOOLS_matrixTransposerCuda(float **inputMatrix,float **outputMatrix,int rows,int cols)
+{
+   float *hostInput;
+   float *hostOutput;
+   size_t count;
+   int ret;
+
+   if ((inputMatrix == NULL) || (outputMatrix == NULL) || (MTOOLS_countElements(rows, cols, &count) != OK))
+   {
+      return ERROR_1;
+   }
+
+   hostInput = (float*)malloc(count * sizeof(float));
+   hostOutput = (float*)malloc(count * sizeof(float));
+   if ((hostInput == NULL) || (hostOutput == NULL))
+   {
+      free(hostInput);
+      free(hostOutput);
+      return ERROR_1;
+   }
+
+   MTOOLS_flattenFloatMatrix(inputMatrix, hostInput, rows, cols);
+   ret = CUDA_matrixTransposeFloat(hostInput, hostOutput, rows, cols);
+   if (ret == OK)
+   {
+      MTOOLS_unflattenFloatMatrix(hostOutput, outputMatrix, cols, rows);
+   }
+
+   free(hostInput);
+   free(hostOutput);
+   return ret;
+}
+
+int MTOOLS_multiplyMatrixCuda(float **inputMatrix_1,float **inputMatrix_2,float **outputMatrix,int rows,int cols)
+{
+   float *hostInput1;
+   float *hostInput2;
+   float *hostOutput;
+   size_t count;
+   int ret;
+
+   if ((rows != cols) || (inputMatrix_1 == NULL) || (inputMatrix_2 == NULL) || (outputMatrix == NULL) ||
+       (MTOOLS_countElements(rows, cols, &count) != OK))
+   {
+      return ERROR_1;
+   }
+
+   hostInput1 = (float*)malloc(count * sizeof(float));
+   hostInput2 = (float*)malloc(count * sizeof(float));
+   hostOutput = (float*)malloc(count * sizeof(float));
+   if ((hostInput1 == NULL) || (hostInput2 == NULL) || (hostOutput == NULL))
+   {
+      free(hostInput1);
+      free(hostInput2);
+      free(hostOutput);
+      return ERROR_1;
+   }
+
+   MTOOLS_flattenFloatMatrix(inputMatrix_1, hostInput1, rows, cols);
+   MTOOLS_flattenFloatMatrix(inputMatrix_2, hostInput2, rows, cols);
+   ret = CUDA_matrixMultiplyFloatSquare(hostInput1, hostInput2, hostOutput, rows);
+   if (ret == OK)
+   {
+      MTOOLS_unflattenFloatMatrix(hostOutput, outputMatrix, rows, cols);
+   }
+
+   free(hostInput1);
+   free(hostInput2);
+   free(hostOutput);
+   return ret;
+}
+
+static int MTOOLS_multiplyMatrixZerosCuda(float **inputMatrix_1,float **inputMatrix_2,float **outputMatrix,
+                                          int rows,int cols, int zeroRow, int zeroCol)
+{
+   float *hostInput1;
+   float *hostInput2;
+   float *hostOutput;
+   size_t count;
+   int i;
+   int j;
+   int ret;
+
+   if ((rows != cols) || (inputMatrix_1 == NULL) || (inputMatrix_2 == NULL) || (outputMatrix == NULL) ||
+       (zeroRow < 0) || (zeroCol < 0) || (MTOOLS_countElements(rows, cols, &count) != OK))
+   {
+      return ERROR_1;
+   }
+
+   hostInput1 = (float*)malloc(count * sizeof(float));
+   hostInput2 = (float*)malloc(count * sizeof(float));
+   hostOutput = (float*)malloc(count * sizeof(float));
+   if ((hostInput1 == NULL) || (hostInput2 == NULL) || (hostOutput == NULL))
+   {
+      free(hostInput1);
+      free(hostInput2);
+      free(hostOutput);
+      return ERROR_1;
+   }
+
+   for (i = 0; i < rows; ++i)
+   for (j = 0; j < cols; ++j)
+   {
+      hostInput1[i * cols + j] = inputMatrix_1[zeroRow + i][zeroCol + j];
+   }
+   MTOOLS_flattenFloatMatrix(inputMatrix_2, hostInput2, rows, cols);
+
+   ret = CUDA_matrixMultiplyFloatSquare(hostInput1, hostInput2, hostOutput, rows);
+   if (ret == OK)
+   {
+      MTOOLS_unflattenFloatMatrix(hostOutput, outputMatrix, rows, cols);
+   }
+
+   free(hostInput1);
+   free(hostInput2);
+   free(hostOutput);
+   return ret;
+}
+
+static int MTOOLS_matrixConvInt2FloatCuda(int** matrixInt,float** matrixFloat,int rows,int cols)
+{
+   int *hostInput;
+   float *hostOutput;
+   size_t count;
+   int ret;
+
+   if ((matrixInt == NULL) || (matrixFloat == NULL) || (MTOOLS_countElements(rows, cols, &count) != OK))
+   {
+      return ERROR_1;
+   }
+
+   hostInput = (int*)malloc(count * sizeof(int));
+   hostOutput = (float*)malloc(count * sizeof(float));
+   if ((hostInput == NULL) || (hostOutput == NULL))
+   {
+      free(hostInput);
+      free(hostOutput);
+      return ERROR_1;
+   }
+
+   MTOOLS_flattenIntMatrix(matrixInt, hostInput, rows, cols);
+   ret = CUDA_matrixIntToFloat(hostInput, hostOutput, rows, cols);
+   if (ret == OK)
+   {
+      MTOOLS_unflattenFloatMatrix(hostOutput, matrixFloat, rows, cols);
+   }
+
+   free(hostInput);
+   free(hostOutput);
+   return ret;
+}
+
+static int MTOOLS_matrixConvFloat2IntCuda(float** matrixFloat,int** matrixInt,int rows,int cols)
+{
+   float *hostInput;
+   int *hostOutput;
+   size_t count;
+   int ret;
+
+   if ((matrixFloat == NULL) || (matrixInt == NULL) || (MTOOLS_countElements(rows, cols, &count) != OK))
+   {
+      return ERROR_1;
+   }
+
+   hostInput = (float*)malloc(count * sizeof(float));
+   hostOutput = (int*)malloc(count * sizeof(int));
+   if ((hostInput == NULL) || (hostOutput == NULL))
+   {
+      free(hostInput);
+      free(hostOutput);
+      return ERROR_1;
+   }
+
+   MTOOLS_flattenFloatMatrix(matrixFloat, hostInput, rows, cols);
+   ret = CUDA_matrixFloatToInt(hostInput, hostOutput, rows, cols);
+   if (ret == OK)
+   {
+      MTOOLS_unflattenIntMatrix(hostOutput, matrixInt, rows, cols);
+   }
+
+   free(hostInput);
+   free(hostOutput);
+   return ret;
+}
+
+static int MTOOLS_matrixCopyInt1Cuda(int** inputMatrix,int** outputMatrix,int rows,int cols,int zeroRowsInput,int zeroColsInput)
+{
+   int *hostInput;
+   int *hostOutput;
+   int inputRows;
+   int inputStride;
+   size_t inputCount;
+   size_t outputCount;
+   int ret;
+
+   if ((inputMatrix == NULL) || (outputMatrix == NULL) || (rows <= 0) || (cols <= 0) ||
+       (zeroRowsInput < 0) || (zeroColsInput < 0))
+   {
+      return ERROR_1;
+   }
+
+   inputRows = zeroRowsInput + rows;
+   inputStride = zeroColsInput + cols;
+   inputCount = (size_t)inputRows * (size_t)inputStride;
+   outputCount = (size_t)rows * (size_t)cols;
+
+   hostInput = (int*)malloc(inputCount * sizeof(int));
+   hostOutput = (int*)malloc(outputCount * sizeof(int));
+   if ((hostInput == NULL) || (hostOutput == NULL))
+   {
+      free(hostInput);
+      free(hostOutput);
+      return ERROR_1;
+   }
+
+   MTOOLS_flattenIntMatrix(inputMatrix, hostInput, inputRows, inputStride);
+   ret = CUDA_matrixCopyInt1(hostInput, inputStride, hostOutput, rows, cols, zeroRowsInput, zeroColsInput);
+   if (ret == OK)
+   {
+      MTOOLS_unflattenIntMatrix(hostOutput, outputMatrix, rows, cols);
+   }
+
+   free(hostInput);
+   free(hostOutput);
+   return ret;
+}
+
+static int MTOOLS_matrixCopyInt2Cuda(int** inputMatrix,int** outputMatrix,int rows,int cols,int zeroRowsOutput,int zeroColsOutput)
+{
+   int *hostInput;
+   int *hostOutput;
+   int outputRows;
+   int outputStride;
+   size_t inputCount;
+   size_t outputCount;
+   int ret;
+
+   if ((inputMatrix == NULL) || (outputMatrix == NULL) || (rows <= 0) || (cols <= 0) ||
+       (zeroRowsOutput < 0) || (zeroColsOutput < 0))
+   {
+      return ERROR_1;
+   }
+
+   outputRows = zeroRowsOutput + rows;
+   outputStride = zeroColsOutput + cols;
+   inputCount = (size_t)rows * (size_t)cols;
+   outputCount = (size_t)outputRows * (size_t)outputStride;
+
+   hostInput = (int*)malloc(inputCount * sizeof(int));
+   hostOutput = (int*)malloc(outputCount * sizeof(int));
+   if ((hostInput == NULL) || (hostOutput == NULL))
+   {
+      free(hostInput);
+      free(hostOutput);
+      return ERROR_1;
+   }
+
+   MTOOLS_flattenIntMatrix(inputMatrix, hostInput, rows, cols);
+   MTOOLS_flattenIntMatrix(outputMatrix, hostOutput, outputRows, outputStride);
+   ret = CUDA_matrixCopyInt2(hostInput, hostOutput, outputStride, rows, cols, zeroRowsOutput, zeroColsOutput);
+   if (ret == OK)
+   {
+      MTOOLS_unflattenIntMatrix(hostOutput, outputMatrix, outputRows, outputStride);
+   }
+
+   free(hostInput);
+   free(hostOutput);
+   return ret;
+}
+#endif
+
 void MTOOLS_multiplyMatrix(float **inputMatrix_1,float **inputMatrix_2,float **outputMatrix,int rows,int cols)
 {
-
    int i,j,k;
    float sum = 0;
    float cElement = 0;
-   
+
    /* check matrix compatibility*/
    if(rows != cols)
    {
       return;
-   }   
-  
-   for (i=0; i<rows; i++) 
-   for (j=0; j<cols; j++) 
+   }
+
+#ifdef USE_CUDA_MATRIX_TOOLS
+   if (MTOOLS_multiplyMatrixCuda(inputMatrix_1, inputMatrix_2, outputMatrix, rows, cols) == OK)
+   {
+      return;
+   }
+#endif
+
+   for (i=0; i<rows; i++)
+   for (j=0; j<cols; j++)
    {
       for (k=0; k<rows; k++)
       {
          cElement = inputMatrix_1[i][k] * inputMatrix_2[k][j];
          sum = sum + cElement;
       }
-     
+
       outputMatrix[i][j] = sum;
-      sum = 0; /* Not necessary */
-      
+      sum = 0;
    }
 }
 
@@ -177,6 +521,13 @@ void MTOOLS_multiplyMatrixZeros(float **inputMatrix_1,float **inputMatrix_2,floa
    {
       return;
    }   
+
+#ifdef USE_CUDA_MATRIX_TOOLS
+   if (MTOOLS_multiplyMatrixZerosCuda(inputMatrix_1, inputMatrix_2, outputMatrix, rows, cols, zeroRow, zeroCol) == OK)
+   {
+      return;
+   }
+#endif
   
    for (i=0; i<rows; i++) 
    for (j=0; j<cols; j++) 
@@ -198,6 +549,14 @@ void MTOOLS_matrixConvInt2Float(int** matrixInt,float** matrixFloat,int rows,int
    int rowIndex;
    int colIndex;
 
+#ifdef USE_CUDA_MATRIX_TOOLS
+   if (MTOOLS_matrixConvInt2FloatCuda(matrixInt, matrixFloat, rows, cols) == OK)
+   {
+      return;
+   }
+#endif
+
+
    for (rowIndex = 0; rowIndex < rows; rowIndex++)
    for (colIndex = 0; colIndex < cols; colIndex++)
    {
@@ -211,6 +570,14 @@ void MTOOLS_matrixConvFloat2Int(float** matrixFloat,int** matrixInt,int rows,int
    int rowIndex;
    int colIndex;
 
+#ifdef USE_CUDA_MATRIX_TOOLS
+   if (MTOOLS_matrixConvFloat2IntCuda(matrixFloat, matrixInt, rows, cols) == OK)
+   {
+      return;
+   }
+#endif
+
+
    for (rowIndex = 0; rowIndex < rows; rowIndex++)
    for (colIndex = 0; colIndex < cols; colIndex++)
    {
@@ -223,6 +590,14 @@ void MTOOLS_matrixCopyInt1(int** inputMatrix, int** outputMatrix, int rows,int c
 
   int rowIndex, colIndex;
 
+#ifdef USE_CUDA_MATRIX_TOOLS
+  if (MTOOLS_matrixCopyInt1Cuda(inputMatrix, outputMatrix, rows, cols, zeroRowsInput, zeroColsInput) == OK)
+  {
+     return;
+  }
+#endif
+
+
   for (rowIndex = 0; rowIndex < rows; rowIndex++)
   for (colIndex = 0; colIndex < cols; colIndex++)
   {
@@ -234,6 +609,14 @@ void MTOOLS_matrixCopyInt2(int** inputMatrix,int** outputMatrix,int rows,int col
 {
 
   int rowIndex, colIndex;
+
+#ifdef USE_CUDA_MATRIX_TOOLS
+  if (MTOOLS_matrixCopyInt2Cuda(inputMatrix, outputMatrix, rows, cols, zeroRowsOutput, zeroColsOutput) == OK)
+  {
+     return;
+  }
+#endif
+
 
   for (rowIndex = 0; rowIndex < rows; rowIndex++)
   for (colIndex = 0; colIndex < cols; colIndex++)

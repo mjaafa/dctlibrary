@@ -40,7 +40,11 @@
 #include "job_tools.h"
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#include "sys/queue.h"
+#else
 #include <sys/queue.h>
+#endif
 
 /* =================================80======================================= */
 /*                               MACRO's                                      */
@@ -76,18 +80,19 @@ int JTOOLS_createJob(pthread_t *threadId, int threadPriority, void *jobFunction,
     
    int                 z_ret;
    static pthread_attr_t   attr;
-   struct sched_param  sched_param;
-        
-    
+
+
    /* initialisation du descripteur de pthread */
    z_ret = pthread_attr_init(&attr);
    if (z_ret != OK)
    {
       return (ERROR_8);
-   } 
-    
+   }
 
-   /* pthread priority fixing */
+
+#ifndef _WIN32
+   /* pthread priority fixing — not supported on Windows pthreads */
+   struct sched_param  sched_param;
    z_ret = pthread_attr_getschedparam (&attr, &sched_param);
    sched_param.sched_priority  = threadPriority;
    if (z_ret != OK)
@@ -113,6 +118,9 @@ int JTOOLS_createJob(pthread_t *threadId, int threadPriority, void *jobFunction,
        printf("error = %d %s \n", z_ret ,strerror(z_ret));
       return (ERROR_8);
    }
+#else
+   (void)threadPriority;
+#endif
 
    /* Creation de la pthread */
    z_ret = (pthread_create((pthread_t *) threadId,
@@ -150,6 +158,11 @@ int JTOOLS_exitJob(pthread_t *threadId)
 
 int JTOOLS_msgQueueInit(JOB_msgQueue_ts *msgQueue)
 {
+   if(msgQueue == NULL)
+   {
+      return ERROR_9;
+   }
+
    pthread_mutexattr_t     mutexAttr;
    pthread_condattr_t      condAttr;
    int                     z_ret;
@@ -170,6 +183,12 @@ int JTOOLS_msgQueueInit(JOB_msgQueue_ts *msgQueue)
 
     pthread_mutexattr_destroy(&mutexAttr);
 
+    z_ret = pthread_condattr_init(&condAttr);
+    if(0 != z_ret)
+    {
+       printf("Cannot initialize cond attributes (err = %d)\n", z_ret);
+       return ERROR_8;
+    }
     z_ret = (pthread_cond_init(&(msgQueue->trigger), &condAttr));
     if(0 != z_ret)
     {
@@ -177,10 +196,6 @@ int JTOOLS_msgQueueInit(JOB_msgQueue_ts *msgQueue)
        return ERROR_8;
     }
     pthread_condattr_destroy(&condAttr);
-   if(msgQueue == NULL)
-   {
-      return ERROR_9;
-   }
    
    msgQueue->length = 0;
    msgQueue->read   = 0;
@@ -237,13 +252,12 @@ int JTOOLS_msgQueueWait(JOB_msgQueue_ts *msgQueue, JOB_msg_ts *msg)
 	     break;
      }
 
-// TODO : implmenent msgqueue.   
-   
+// TODO : implmenent msgqueue.
+
     pthread_cond_wait(&(msgQueue->trigger), &(msgQueue->locker));
     pthread_mutex_unlock(&msgQueue->locker);
 
-
-  
+   return OK;
 }
 
 

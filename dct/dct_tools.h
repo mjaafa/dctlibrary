@@ -45,6 +45,9 @@
 #include <errno.h>
 #include <string.h>
 #include "dctlib.h"
+#ifdef _USE_MATRIX_TOOLS
+#include "matrix_tools.h"
+#endif
 /* =================================80======================================= */
 /*                               DEFINES                                      */
 /* =================================80======================================= */
